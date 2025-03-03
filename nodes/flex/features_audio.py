@@ -1118,3 +1118,516 @@ class EMDFeature(BaseAudioFeature):
                 normalized = [(v - min_val) / range_val for v in values]
 
             self.normalized_features[feature_name] = normalized
+
+
+class MelodicRangeFeature(BaseAudioFeature):
+    def __init__(
+        self,
+        width,
+        height,
+        feature_name,
+        audio,
+        frame_count,
+        frame_rate,
+        feature_type="melodic_mid_range",
+        n_mels=128,
+        fmin=20,
+        fmax=16000,
+    ):
+        super().__init__(feature_name, audio, frame_count, frame_rate, width, height)
+        self.feature_type = feature_type
+        self.n_mels = n_mels
+        self.fmin = fmin
+        self.fmax = fmax
+
+        # Set frequency ranges based on feature type
+        if feature_type == "melodic_low_range":
+            self.fmin = 20
+            self.fmax = 500
+        elif feature_type == "melodic_mid_range":
+            self.fmin = 200
+            self.fmax = 2000
+        elif feature_type == "melodic_high_range":
+            self.fmin = 1000
+            self.fmax = 8000
+        elif feature_type == "melodic_full_range":
+            self.fmin = 20
+            self.fmax = 16000
+
+    @classmethod
+    def get_extraction_methods(cls):
+        return [
+            "melodic_low_range",
+            "melodic_mid_range",
+            "melodic_high_range",
+            "melodic_full_range",
+        ]
+
+    def extract(self):
+        import numpy as np
+        import torch
+        import librosa
+
+        waveform = self.audio["waveform"]
+        sample_rate = self.audio["sample_rate"]
+
+        # Process audio in frames to get more detailed feature variation
+        feature_values = []
+        hop_length = int(sample_rate / self.frame_rate)
+
+        # Convert to mono if multichannel
+        if waveform.dim() > 2:  # [batch, channels, samples]
+            waveform = waveform[0]  # Take first batch
+
+        if waveform.dim() > 1:  # [channels, samples]
+            waveform = torch.mean(waveform, dim=0)  # Convert to mono
+
+        # Convert to numpy for librosa processing
+        if isinstance(waveform, torch.Tensor):
+            waveform = waveform.cpu().numpy()
+
+        # Calculate mel spectrogram for the entire audio
+        mel_spec = librosa.feature.melspectrogram(
+            y=waveform,
+            sr=sample_rate,
+            n_mels=self.n_mels,
+            fmin=self.fmin,
+            fmax=self.fmax,
+            hop_length=hop_length,
+        )
+
+        # Convert to dB scale
+        mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+
+        # Extract features from the spectrogram for each frame
+        for i in range(self.frame_count):
+            frame_idx = min(i, mel_spec.shape[1] - 1)
+
+            if frame_idx < 0 or frame_idx >= mel_spec.shape[1]:
+                # Use last valid value or default to 0
+                if feature_values:
+                    feature_values.append(feature_values[-1])
+                else:
+                    feature_values.append(0.0)
+                continue
+
+            # Get the mel spectrum at this frame
+            frame_mel = mel_spec_db[:, frame_idx]
+
+            # Calculate the spectral centroid (weighted average of the frequencies)
+            if np.sum(np.abs(frame_mel)) > 0:
+                # Use the normalized spectrum as weights
+                weights = frame_mel - np.min(frame_mel)
+                if np.max(weights) > 0:
+                    weights = weights / np.max(weights)
+
+                # Generate frequency bins corresponding to mel bands
+                mel_freqs = librosa.mel_frequencies(
+                    n_mels=self.n_mels, fmin=self.fmin, fmax=self.fmax
+                )
+
+                # Calculate weighted average
+                centroid = np.sum(weights * mel_freqs) / (np.sum(weights) + 1e-8)
+
+                # Normalize centroid to 0-1 range
+                normalized_centroid = (centroid - self.fmin) / (self.fmax - self.fmin)
+                feature_values.append(float(normalized_centroid))
+
+                print(
+                    f"Frame {i} melodic centroid: {centroid:.2f} Hz, normalized: {normalized_centroid:.4f}"
+                )
+            else:
+                # For silent frames
+                if feature_values:
+                    feature_values.append(feature_values[-1])
+                else:
+                    feature_values.append(0.0)
+
+        # Check if we have variation in our values
+        if len(feature_values) > 1:
+            min_val = min(feature_values)
+            max_val = max(feature_values)
+            print(f"Melodic Range Feature value range: {min_val} to {max_val}")
+
+            if abs(max_val - min_val) < 1e-6:
+                print("WARNING: No variation in melodic range feature values!")
+            else:
+                print(f"Melodic variation detected: {max_val - min_val}")
+
+        # Store raw features - no normalization
+        self.features = {self.feature_name: feature_values}
+
+        return self
+
+    def _normalize_features(self):
+        for feature_name, values in self.features.items():
+            min_val = min(values)
+            max_val = max(values)
+            range_val = max_val - min_val
+
+            if range_val == 0:
+                # Avoid division by zero
+                normalized = [0.5 for _ in values]
+            else:
+                normalized = [(v - min_val) / range_val for v in values]
+
+            self.features[feature_name] = normalized
+
+
+class NoteEventsFeature(BaseAudioFeature):
+    def __init__(
+        self,
+        width,
+        height,
+        feature_name,
+        audio,
+        frame_count,
+        frame_rate,
+        feature_type="note_onsets",
+        min_note_duration=0.1,  # minimum note duration in seconds
+        onset_threshold=0.5,  # threshold for onset detection sensitivity
+        pitch_tolerance=0.5,  # semitone tolerance for pitch detection
+        pitch_min=50,  # minimum frequency to consider (Hz)
+        pitch_max=2000,  # maximum frequency to consider (Hz)
+        polyphony=True,  # whether to detect multiple simultaneous notes
+        crepe_model="medium",  # CREPE model for accurate pitch detection
+    ):
+        super().__init__(feature_name, audio, frame_count, frame_rate, width, height)
+        self.feature_type = feature_type
+        self.min_note_duration = min_note_duration
+        self.onset_threshold = onset_threshold
+        self.pitch_tolerance = pitch_tolerance
+        self.pitch_min = pitch_min
+        self.pitch_max = pitch_max
+        self.polyphony = polyphony
+        self.crepe_model = crepe_model
+        self.notes = []  # Will contain detected note events
+        self._prepare_audio()
+
+    @classmethod
+    def get_extraction_methods(cls):
+        return [
+            "note_onsets",  # Shows just note onset moments
+            "note_pitches",  # Shows active note pitches
+            "note_durations",  # Shows active note durations
+            "note_density",  # Shows how many notes are active at once
+            "note_activity",  # Shows note on/off envelope
+        ]
+
+    def extract(self):
+        import numpy as np
+        import librosa
+        import torch
+        from scipy.signal import find_peaks
+
+        waveform = self.audio["waveform"]
+        sample_rate = self.audio["sample_rate"]
+
+        # Convert to mono if multichannel
+        if waveform.dim() > 2:  # [batch, channels, samples]
+            waveform = waveform[0]  # Take first batch
+
+        if waveform.dim() > 1:  # [channels, samples]
+            waveform = torch.mean(waveform, dim=0)  # Convert to mono
+
+        # Convert to numpy for processing
+        if isinstance(waveform, torch.Tensor):
+            waveform = waveform.cpu().numpy()
+
+        # Calculate onset detection
+        hop_length = 512
+        onset_env = librosa.onset.onset_strength(
+            y=waveform, sr=sample_rate, hop_length=hop_length
+        )
+
+        # Find onset peaks
+        peaks, _ = find_peaks(
+            onset_env,
+            height=self.onset_threshold * np.max(onset_env),
+            distance=int(self.min_note_duration * sample_rate / hop_length),
+        )
+        onset_times = librosa.frames_to_time(
+            peaks, sr=sample_rate, hop_length=hop_length
+        )
+
+        # Calculate pitch information - try to use CREPE for higher accuracy
+        try:
+            import crepe
+
+            # Get pitch estimates using CREPE
+            time_steps, frequencies, confidence, _ = crepe.predict(
+                waveform,
+                sample_rate,
+                model_capacity=self.crepe_model,
+                viterbi=True,
+                step_size=10,  # 10ms step size for higher resolution
+            )
+
+            # Filter by our pitch range
+            valid_pitch_mask = (frequencies >= self.pitch_min) & (
+                frequencies <= self.pitch_max
+            )
+            valid_confidence_mask = confidence > 0.5  # Only use confident predictions
+            valid_mask = valid_pitch_mask & valid_confidence_mask
+
+            time_steps = time_steps[valid_mask]
+            frequencies = frequencies[valid_mask]
+            confidence = confidence[valid_mask]
+
+        except ImportError:
+            # Fallback to librosa
+            print("CREPE not available, falling back to librosa for pitch detection")
+            pitches, magnitudes = librosa.piptrack(
+                y=waveform,
+                sr=sample_rate,
+                fmin=self.pitch_min,
+                fmax=self.pitch_max,
+                hop_length=hop_length,
+            )
+
+            # For each frame, find the strongest pitch
+            times = librosa.frames_to_time(
+                np.arange(pitches.shape[1]), sr=sample_rate, hop_length=hop_length
+            )
+
+            frequencies = []
+            confidence = []
+            time_steps = []
+
+            for t in range(pitches.shape[1]):
+                index = magnitudes[:, t].argmax()
+                if magnitudes[index, t] > 0:
+                    frequencies.append(pitches[index, t])
+                    confidence.append(magnitudes[index, t])
+                    time_steps.append(times[t])
+
+            # Convert to numpy arrays
+            time_steps = np.array(time_steps)
+            frequencies = np.array(frequencies)
+            confidence = np.array(confidence)
+
+        # Process note events
+        self.notes = []
+        active_notes = {}
+
+        # For each onset, find the corresponding pitch and create a note
+        for onset_time in onset_times:
+            # Find the closest pitch estimate to this onset
+            if len(time_steps) > 0:
+                idx = np.abs(time_steps - onset_time).argmin()
+                if idx < len(frequencies):
+                    pitch = frequencies[idx]
+
+                    # Find the end of this note (next onset or significant drop in energy)
+                    onset_frame = librosa.time_to_frames(
+                        onset_time, sr=sample_rate, hop_length=hop_length
+                    )
+
+                    # Look at the next 2 seconds maximum (or until next onset)
+                    max_frames_to_check = int(2.0 * sample_rate / hop_length)
+                    end_frame = onset_frame + 1
+
+                    while end_frame < min(
+                        len(onset_env), onset_frame + max_frames_to_check
+                    ):
+                        # Stop if we hit another onset
+                        if end_frame in peaks:
+                            break
+
+                        # Or if the energy drops significantly
+                        if onset_env[end_frame] < 0.2 * onset_env[onset_frame]:
+                            # Check a few more frames to avoid stopping on brief dips
+                            if all(
+                                onset_env[
+                                    end_frame : min(end_frame + 5, len(onset_env))
+                                ]
+                                < 0.2 * onset_env[onset_frame]
+                            ):
+                                break
+
+                        end_frame += 1
+
+                    offset_time = librosa.frames_to_time(
+                        end_frame, sr=sample_rate, hop_length=hop_length
+                    )
+                    duration = offset_time - onset_time
+
+                    # Only add notes with reasonable duration
+                    if duration >= self.min_note_duration:
+                        note = {
+                            "onset": onset_time,
+                            "offset": offset_time,
+                            "duration": duration,
+                            "pitch": pitch,
+                            "midi": librosa.hz_to_midi(pitch),
+                            "note": librosa.hz_to_note(pitch),
+                            "confidence": (
+                                confidence[idx] if idx < len(confidence) else 0.5
+                            ),
+                        }
+                        self.notes.append(note)
+
+                        # For monophonic tracking, store the active note
+                        if not self.polyphony:
+                            # End all previous notes
+                            for note_id in list(active_notes.keys()):
+                                active_notes[note_id]["offset"] = onset_time
+                                active_notes[note_id]["duration"] = (
+                                    onset_time - active_notes[note_id]["onset"]
+                                )
+
+                            active_notes[len(self.notes) - 1] = note
+                        else:
+                            # For polyphonic tracking, group by similar pitches
+                            found_match = False
+                            for note_id, active_note in active_notes.items():
+                                if (
+                                    abs(
+                                        librosa.hz_to_midi(active_note["pitch"])
+                                        - librosa.hz_to_midi(pitch)
+                                    )
+                                    < self.pitch_tolerance
+                                ):
+                                    # End the previous note with same pitch
+                                    active_notes[note_id]["offset"] = onset_time
+                                    active_notes[note_id]["duration"] = (
+                                        onset_time - active_notes[note_id]["onset"]
+                                    )
+                                    found_match = True
+                                    break
+
+                            active_notes[len(self.notes) - 1] = note
+
+        # Sort notes by onset time
+        self.notes.sort(key=lambda x: x["onset"])
+
+        print(
+            f"Detected {len(self.notes)} notes with pitches ranging from "
+            f"{min([n['pitch'] for n in self.notes]) if self.notes else 0} Hz to "
+            f"{max([n['pitch'] for n in self.notes]) if self.notes else 0} Hz"
+        )
+
+        # Create feature data for each type
+        self._create_feature_data()
+
+        return self
+
+    def _create_feature_data(self):
+        """Convert detected notes into feature sequences"""
+        import numpy as np
+        import librosa
+
+        # Calculate time for each feature frame
+        frame_times = np.linspace(
+            0,
+            self.audio["waveform"].shape[-1] / self.audio["sample_rate"],
+            self.frame_count,
+        )
+
+        # Initialize feature arrays
+        note_onsets = np.zeros(self.frame_count)
+        note_pitches = np.zeros(self.frame_count)
+        note_durations = np.zeros(self.frame_count)
+        note_density = np.zeros(self.frame_count)
+        note_activity = np.zeros(self.frame_count)
+
+        # Convert note events to feature frames
+        for note in self.notes:
+            # Find frames that overlap with this note
+            start_idx = int(note["onset"] * self.frame_rate)
+            end_idx = int(note["offset"] * self.frame_rate)
+
+            # Ensure indices are within bounds
+            start_idx = max(0, min(start_idx, self.frame_count - 1))
+            end_idx = max(0, min(end_idx, self.frame_count - 1))
+
+            # Set onset feature (impulse at note start)
+            if start_idx < self.frame_count:
+                note_onsets[start_idx] = 1.0
+
+            # Set pitch feature (note frequency during note duration)
+            pitch_value = (note["pitch"] - self.pitch_min) / (
+                self.pitch_max - self.pitch_min
+            )
+            note_pitches[start_idx : end_idx + 1] = max(
+                note_pitches[start_idx : end_idx + 1].max(), pitch_value
+            )
+
+            # Set duration feature (increases with note length)
+            duration_value = min(
+                1.0, note["duration"] / 2.0
+            )  # Cap at 2 seconds for normalization
+            note_durations[start_idx : end_idx + 1] = max(
+                note_durations[start_idx : end_idx + 1].max(), duration_value
+            )
+
+            # Set activity feature (note on/off envelope with attack/decay)
+            attack_frames = min(5, end_idx - start_idx + 1)
+            release_frames = min(10, end_idx - start_idx + 1)
+
+            if start_idx < self.frame_count and end_idx >= start_idx:
+                # Apply attack (linear ramp up)
+                for i in range(min(attack_frames, end_idx - start_idx + 1)):
+                    idx = start_idx + i
+                    if idx < self.frame_count:
+                        note_activity[idx] = max(
+                            note_activity[idx], (i + 1) / attack_frames
+                        )
+
+                # Sustain
+                for i in range(attack_frames, end_idx - start_idx - release_frames + 1):
+                    idx = start_idx + i
+                    if idx < self.frame_count:
+                        note_activity[idx] = max(note_activity[idx], 1.0)
+
+                # Release (linear ramp down)
+                for i in range(
+                    max(0, end_idx - start_idx - release_frames + 1),
+                    end_idx - start_idx + 1,
+                ):
+                    idx = start_idx + i
+                    if idx < self.frame_count:
+                        release_pos = end_idx - start_idx - i
+                        note_activity[idx] = max(
+                            note_activity[idx], release_pos / release_frames
+                        )
+
+        # Calculate note density (how many notes are active at each frame)
+        for i, time in enumerate(frame_times):
+            active_count = sum(
+                1 for note in self.notes if note["onset"] <= time <= note["offset"]
+            )
+            note_density[i] = min(1.0, active_count / 4.0)  # Normalize, cap at 4 notes
+
+        # Store features
+        self.features = {
+            "note_onsets": note_onsets.tolist(),
+            "note_pitches": note_pitches.tolist(),
+            "note_durations": note_durations.tolist(),
+            "note_density": note_density.tolist(),
+            "note_activity": note_activity.tolist(),
+        }
+
+        # Set active feature based on feature_type
+        self.features[self.feature_name] = self.features[self.feature_type]
+
+    def _normalize_features(self):
+        # Features are already normalized in _create_feature_data
+        pass
+
+    def get_all_notes(self):
+        """Return all detected notes as a list of dictionaries"""
+        if not self.notes:
+            self.extract()
+        return self.notes
+
+    def get_notes_at_frame(self, frame_index):
+        """Return notes active at the given frame"""
+        if not self.notes:
+            self.extract()
+
+        frame_time = frame_index / self.frame_rate
+        active_notes = [
+            note for note in self.notes if note["onset"] <= frame_time <= note["offset"]
+        ]
+        return active_notes

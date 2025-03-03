@@ -483,3 +483,225 @@ class EMDFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
         ).extract()
 
         return (feature,)
+
+
+@apply_tooltips
+class MelodicRangeFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+                "extraction_method": (
+                    [
+                        "melodic_low_range",
+                        "melodic_mid_range",
+                        "melodic_high_range",
+                        "melodic_full_range",
+                    ],
+                    {"default": "melodic_mid_range"},
+                ),
+                "frame_count": (
+                    "INT",
+                    {"default": 16, "min": 1, "max": 1024, "step": 1},
+                ),
+                "frame_rate": (
+                    "FLOAT",
+                    {"default": 30.0, "min": 0.01, "max": 1000.0, "step": 0.01},
+                ),
+                "width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 64}),
+                "height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 64}),
+                "n_mels": ("INT", {"default": 128, "min": 16, "max": 512, "step": 8}),
+            },
+        }
+
+    RETURN_TYPES = ("FEATURE",)
+    FUNCTION = "extract_feature"
+    CATEGORY = _category
+
+    def extract_feature(
+        self, audio, extraction_method, frame_count, frame_rate, width, height, n_mels
+    ):
+        from .features_audio import MelodicRangeFeature
+
+        # Validate extraction_method
+        valid_methods = [
+            "melodic_low_range",
+            "melodic_mid_range",
+            "melodic_high_range",
+            "melodic_full_range",
+        ]
+        if extraction_method not in valid_methods:
+            print(
+                f"Warning: Invalid extraction_method '{extraction_method}'. Using default."
+            )
+            extraction_method = "melodic_mid_range"
+
+        # Validate frame_rate
+        if frame_rate < 0.01:
+            print(f"Warning: Invalid frame_rate {frame_rate}. Using default.")
+            frame_rate = 30.0
+
+        # Calculate target frame count
+        target_frame_count = self.calculate_target_frame_count(
+            audio, frame_rate, frame_count
+        )
+
+        feature_name = "melodic_range_feature"
+        feature = MelodicRangeFeature(
+            width=width,
+            height=height,
+            feature_name=feature_name,
+            audio=audio,
+            frame_count=target_frame_count,
+            frame_rate=frame_rate,
+            feature_type=extraction_method,
+            n_mels=n_mels,
+        ).extract()
+
+        return (feature,)
+
+
+@apply_tooltips
+class NoteEventsFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+                "extraction_method": (
+                    [
+                        "note_onsets",
+                        "note_pitches",
+                        "note_durations",
+                        "note_density",
+                        "note_activity",
+                    ],
+                    {"default": "note_activity"},
+                ),
+                "frame_count": (
+                    "INT",
+                    {"default": 16, "min": 1, "max": 1024, "step": 1},
+                ),
+                "frame_rate": (
+                    "FLOAT",
+                    {"default": 30.0, "min": 0.01, "max": 1000.0, "step": 0.01},
+                ),
+                "width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 64}),
+                "height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 64}),
+                "onset_threshold": (
+                    "FLOAT",
+                    {"default": 0.5, "min": 0.1, "max": 1.0, "step": 0.01},
+                ),
+                "min_note_duration": (
+                    "FLOAT",
+                    {"default": 0.1, "min": 0.01, "max": 1.0, "step": 0.01},
+                ),
+            },
+            "optional": {
+                "pitch_min": (
+                    "FLOAT",
+                    {"default": 50.0, "min": 20.0, "max": 500.0, "step": 1.0},
+                ),
+                "pitch_max": (
+                    "FLOAT",
+                    {"default": 2000.0, "min": 500.0, "max": 8000.0, "step": 10.0},
+                ),
+                "polyphony_enabled": ("BOOLEAN", {"default": True}),
+                "opt_crepe_model": (
+                    ["none", "medium", "tiny", "small", "large", "full"],
+                    {"default": "medium"},
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("FEATURE", "STRING")
+    RETURN_NAMES = ("feature", "notes_json")
+    FUNCTION = "extract_feature"
+    CATEGORY = _category
+
+    def extract_feature(
+        self,
+        audio,
+        extraction_method,
+        frame_count,
+        frame_rate,
+        width,
+        height,
+        onset_threshold,
+        min_note_duration,
+        pitch_min=50.0,
+        pitch_max=2000.0,
+        polyphony_enabled=True,
+        opt_crepe_model="medium",
+    ):
+        from .features_audio import NoteEventsFeature
+        import json
+        import numpy as np
+
+        # Validate extraction_method
+        valid_methods = [
+            "note_onsets",
+            "note_pitches",
+            "note_durations",
+            "note_density",
+            "note_activity",
+        ]
+        if extraction_method not in valid_methods:
+            print(
+                f"Warning: Invalid extraction_method '{extraction_method}'. Using default."
+            )
+            extraction_method = "note_activity"
+
+        # Validate frame_rate
+        if frame_rate < 0.01:
+            print(f"Warning: Invalid frame_rate {frame_rate}. Using default.")
+            frame_rate = 30.0
+
+        # Calculate target frame count
+        target_frame_count = self.calculate_target_frame_count(
+            audio, frame_rate, frame_count
+        )
+
+        feature_name = "note_events_feature"
+        feature = NoteEventsFeature(
+            width=width,
+            height=height,
+            feature_name=feature_name,
+            audio=audio,
+            frame_count=target_frame_count,
+            frame_rate=frame_rate,
+            feature_type=extraction_method,
+            min_note_duration=min_note_duration,
+            onset_threshold=onset_threshold,
+            pitch_min=pitch_min,
+            pitch_max=pitch_max,
+            polyphony=polyphony_enabled,
+            crepe_model=opt_crepe_model,
+        ).extract()
+
+        # Get the detected notes as JSON
+        notes = feature.get_all_notes()
+
+        # Convert numpy types to standard Python types for JSON serialization
+        notes_json_safe = []
+        for note in notes:
+            json_safe_note = {}
+            for key, value in note.items():
+                # Convert numpy numeric types to Python float or int
+                if isinstance(
+                    value, (np.integer, np.int_, np.int8, np.int16, np.int32, np.int64)
+                ):
+                    json_safe_note[key] = int(value)
+                elif isinstance(
+                    value, (np.floating, np.float_, np.float16, np.float32, np.float64)
+                ):
+                    json_safe_note[key] = float(value)
+                else:
+                    json_safe_note[key] = value
+            notes_json_safe.append(json_safe_note)
+
+        # Now serialize to JSON
+        notes_json = json.dumps(notes_json_safe, indent=2)
+
+        return (feature, notes_json)

@@ -145,9 +145,11 @@ from .nodes.flex.feature_extractors_audio import (
     PitchFeatureExtractor,
     WaveletFeatureExtractor,
     EMDFeatureExtractor,
+    MelodicRangeFeatureExtractor,
     PitchRangeNode,
     PitchRangePresetNode,
     PitchRangeByNoteNode,
+    NoteEventsFeatureExtractor,
 )
 
 from .nodes.flex.feature_extractors_midi import (
@@ -473,6 +475,7 @@ NODE_CLASS_MAPPINGS = {
     "PitchFeatureExtractor": PitchFeatureExtractor,
     "WaveletFeatureExtractor": WaveletFeatureExtractor,
     "EMDFeatureExtractor": EMDFeatureExtractor,
+    "MelodicRangeFeatureExtractor": MelodicRangeFeatureExtractor,
     "PitchRange": PitchRangeNode,
     "PitchRangePreset": PitchRangePresetNode,
     "PitchRangeByNoteNode": PitchRangeByNoteNode,
@@ -569,6 +572,7 @@ NODE_CLASS_MAPPINGS = {
     "Image_Shuffle": Image_Shuffle,
     "SwapDevice": SwapDevice,
     "ImageIntervalSelectPercentage": ImageIntervalSelectPercentage,
+    "NoteEventsFeatureExtractor": NoteEventsFeatureExtractor,
 }
 
 
@@ -576,45 +580,41 @@ WEB_DIRECTORY = "./web/js"
 EXTENSION_WEB_DIRS = ["./web/extensions"]
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AudioSeparatorSimple":         "Audio Separator",
-    "ProximityVisualizer":          "Preview Proximity",
-    "EffectVisualizer":             "Preview Effect",
-    "PitchVisualizer":              "Preview Pitch",
-    "FlexVideoSpeed":               "**BETA** Flex Video Speed",
-    "FlexVideoFrameBlend":          "**BETA**Flex Video Frame Blend",
-    "AudioFeatureVisualizer":       "Audio Feature Visualizer ***BETA***" ,
-
-    "MIDILoadAndExtract":           "MIDI Load & Feature Extract",
-    "PitchRangeByNoteNode":         "Pitch Range By Note",
-    "AudioFeatureExtractor":        "Audio Feature Extractor",
-    "TimeFeatureNode":              "Time Feature",
-    "DepthFeatureNode":             "Depth Feature",
-    "BrightnessFeatureNode":        "Brightness Feature",
-    "MotionFeatureNode":            "Motion Feature",
-    "ImageCASBatch":                "Image Contrast Adaptive Sharpen Batch",
-    "ImageIntervalSelectPercentage":"Image Interval Select %",
-    "ImageScaleToTarget":           "Upscale Image To Target",
-    "FeatureToSplineData":          "***BETA*** Feature To Spline Data",
-    "SplineFeatureModulator":       "***BETA*** Spline Feature Modulator",
-    "SplineRhythmModulator":        "***BETA*** Spline Rhythm Modulator",
-    "MaskMorph":                    "Mask Morph [DEPRECATED]",
-    "MaskTransform":                "Mask Transform [DEPRECATED]",
-    "MaskMath":                    "Mask Math [DEPRECATED]",
-    "MaskRings":                   "Mask Rings [DEPRECATED]",
-    "MaskWarp":                    "Mask Warp [DEPRECATED]",
-
-    "Image_Shuffle":                 "Image Shuffle ROTI",
-    "Audio_Combine":                 "Audio Combine ROTI",
-    "Audio_Concatenate":             "Audio Concatenate ROTI",
-    "Color_Picker":                  "Color_Picker ROTI",
-    "Doom_":                        "DOOM",
+    "AudioSeparatorSimple": "Audio Separator",
+    "ProximityVisualizer": "Preview Proximity",
+    "EffectVisualizer": "Preview Effect",
+    "PitchVisualizer": "Preview Pitch",
+    "FlexVideoSpeed": "**BETA** Flex Video Speed",
+    "FlexVideoFrameBlend": "**BETA**Flex Video Frame Blend",
+    "AudioFeatureVisualizer": "Audio Feature Visualizer ***BETA***",
+    "MIDILoadAndExtract": "MIDI Load & Feature Extract",
+    "PitchRangeByNoteNode": "Pitch Range By Note",
+    "AudioFeatureExtractor": "Audio Feature Extractor",
+    "TimeFeatureNode": "Time Feature",
+    "DepthFeatureNode": "Depth Feature",
+    "BrightnessFeatureNode": "Brightness Feature",
+    "MotionFeatureNode": "Motion Feature",
+    "ImageCASBatch": "Image Contrast Adaptive Sharpen Batch",
+    "ImageIntervalSelectPercentage": "Image Interval Select %",
+    "ImageScaleToTarget": "Upscale Image To Target",
+    "FeatureToSplineData": "***BETA*** Feature To Spline Data",
+    "SplineFeatureModulator": "***BETA*** Spline Feature Modulator",
+    "SplineRhythmModulator": "***BETA*** Spline Rhythm Modulator",
+    "MaskMorph": "Mask Morph [DEPRECATED]",
+    "MaskTransform": "Mask Transform [DEPRECATED]",
+    "MaskMath": "Mask Math [DEPRECATED]",
+    "MaskRings": "Mask Rings [DEPRECATED]",
+    "MaskWarp": "Mask Warp [DEPRECATED]",
+    "Image_Shuffle": "Image Shuffle ROTI",
+    "Audio_Combine": "Audio Combine ROTI",
+    "Audio_Concatenate": "Audio Concatenate ROTI",
+    "Color_Picker": "Color_Picker ROTI",
+    "Doom_": "DOOM",
 }
-
 
 
 # Update NODE_CLASS_MAPPINGS with external nodes
 NODE_CLASS_MAPPINGS.update(EXTERNAL_NODE_CLASS_MAPPINGS)
-
 
 
 import re
