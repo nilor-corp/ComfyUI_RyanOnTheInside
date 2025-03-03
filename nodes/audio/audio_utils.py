@@ -5,6 +5,29 @@ import torchaudio.functional as F
 import librosa
 import numpy as np
 import torch.nn.functional as nnf
+import pywt
+from scipy.signal import hilbert
+import sys
+import os
+
+try:
+    import emd
+    from emd.sift import sift
+
+    print("[RyanOnTheInside] Successfully imported emd package")
+    HAS_EMD = True
+except ImportError as e:
+    print(f"[RyanOnTheInside] Detailed import error: {str(e)}")
+    print(
+        f"[RyanOnTheInside] Looking for emd in: {os.path.dirname(os.__file__)}/site-packages"
+    )
+    HAS_EMD = False
+
+    def sift(*args, **kwargs):
+        raise RuntimeError(
+            "EMD functionality is not available. Please install emd-signal package."
+        )
+
 
 def pitch_shift(waveform, sample_rate, n_steps):
     """
@@ -21,6 +44,7 @@ def pitch_shift(waveform, sample_rate, n_steps):
     # Use the functional API for pitch shifting
     shifted_waveform = F.pitch_shift(waveform, sample_rate, n_steps=n_steps)
     return shifted_waveform
+
 
 def fade_audio(waveform, sample_rate, fade_in_duration, fade_out_duration, shape):
     """
@@ -39,12 +63,11 @@ def fade_audio(waveform, sample_rate, fade_in_duration, fade_out_duration, shape
     fade_in_samples = int(fade_in_duration * sample_rate)
     fade_out_samples = int(fade_out_duration * sample_rate)
     fader = T.Fade(
-        fade_in_len=fade_in_samples,
-        fade_out_len=fade_out_samples,
-        fade_shape=shape
+        fade_in_len=fade_in_samples, fade_out_len=fade_out_samples, fade_shape=shape
     )
     faded_waveform = fader(waveform)
     return faded_waveform
+
 
 def apply_gain(waveform, gain_db):
     """
@@ -61,6 +84,7 @@ def apply_gain(waveform, gain_db):
     gain_factor = 10 ** (gain_db / 20)
     amplified_waveform = waveform * gain_factor
     return amplified_waveform
+
 
 def time_stretch(waveform, rate):
     """
@@ -102,6 +126,7 @@ def time_stretch(waveform, rate):
 
     return stretched_waveform
 
+
 def dither_audio(waveform, bit_depth, noise_shaping):
     """
     Applies dithering to the waveform.
@@ -124,9 +149,7 @@ def dither_audio(waveform, bit_depth, noise_shaping):
 
     # Apply dithering
     dithered_waveform = F.dither(
-        waveform,
-        density_function=density_function,
-        noise_shaping=noise_shaping_flag
+        waveform, density_function=density_function, noise_shaping=noise_shaping_flag
     )
 
     # Quantize the waveform to the specified bit depth
@@ -135,6 +158,7 @@ def dither_audio(waveform, bit_depth, noise_shaping):
     quantized_waveform = torch.round(quantized_waveform * max_val) / max_val
 
     return quantized_waveform
+
 
 def pad_audio(waveform, pad_left, pad_right, pad_mode):
     """
@@ -153,6 +177,7 @@ def pad_audio(waveform, pad_left, pad_right, pad_mode):
     padded_waveform = nnf.pad(waveform, (pad_left, pad_right), mode=pad_mode)
     return padded_waveform
 
+
 def normalize_volume(waveform, target_level):
     """
     Normalizes the waveform to a target RMS level in decibels.
@@ -165,7 +190,7 @@ def normalize_volume(waveform, target_level):
         Tensor: Normalized waveform.
     """
     # Calculate current RMS level in dB
-    rms = torch.sqrt(torch.mean(waveform ** 2))
+    rms = torch.sqrt(torch.mean(waveform**2))
     current_db = 20 * torch.log10(rms + 1e-6)  # Add small value to avoid log(0)
 
     # Calculate the required gain in dB
@@ -176,6 +201,7 @@ def normalize_volume(waveform, target_level):
     normalized_waveform = waveform * gain
 
     return normalized_waveform
+
 
 def resample_audio(waveform, orig_sample_rate, new_sample_rate):
     """
@@ -192,6 +218,7 @@ def resample_audio(waveform, orig_sample_rate, new_sample_rate):
     resampler = T.Resample(orig_freq=orig_sample_rate, new_freq=new_sample_rate)
     resampled_waveform = resampler(waveform)
     return resampled_waveform
+
 
 def merge_channels(waveform_list):
     """
@@ -210,6 +237,7 @@ def merge_channels(waveform_list):
     merged_waveform = torch.cat(trimmed_waveforms, dim=0)
     return merged_waveform
 
+
 def split_channels(waveform):
     """
     Splits a multi-channel waveform into individual channels.
@@ -224,8 +252,9 @@ def split_channels(waveform):
         raise ValueError("Input waveform must have at least 2 channels for splitting")
 
     # Split into individual channels
-    channel_waveforms = [waveform[i:i+1, :] for i in range(waveform.shape[0])]
+    channel_waveforms = [waveform[i : i + 1, :] for i in range(waveform.shape[0])]
     return channel_waveforms
+
 
 def concatenate_audio(waveform1, waveform2):
     """
@@ -241,6 +270,7 @@ def concatenate_audio(waveform1, waveform2):
     # Concatenate waveforms
     concatenated_waveform = torch.cat([waveform1, waveform2], dim=-1)
     return concatenated_waveform
+
 
 def combine_audio(waveform1, waveform2, weight1=0.5, weight2=0.5):
     """
@@ -277,10 +307,11 @@ def combine_audio(waveform1, waveform2, weight1=0.5, weight2=0.5):
 
     return combined_waveform
 
+
 def calculate_amplitude_envelope(audio, frame_count, frame_rate):
     # Calculate the amplitude envelope of the audio signal
-    waveform = audio['waveform']
-    sample_rate = audio['sample_rate']
+    waveform = audio["waveform"]
+    sample_rate = audio["sample_rate"]
 
     # Ensure waveform is a NumPy array for processing
     if isinstance(waveform, torch.Tensor):
@@ -302,10 +333,11 @@ def calculate_amplitude_envelope(audio, frame_count, frame_rate):
 
     return amplitude_envelope
 
+
 def calculate_rms_energy(audio, frame_count, frame_rate):
     # Calculate the RMS energy of the audio signal
-    waveform = audio['waveform']
-    sample_rate = audio['sample_rate']
+    waveform = audio["waveform"]
+    sample_rate = audio["sample_rate"]
 
     # Ensure waveform is a NumPy array for processing
     if isinstance(waveform, torch.Tensor):
@@ -322,19 +354,20 @@ def calculate_rms_energy(audio, frame_count, frame_rate):
         if len(frame) == 0:
             rms = 0
         else:
-            rms = np.sqrt(np.mean(frame ** 2))
+            rms = np.sqrt(np.mean(frame**2))
         rms_energy.append(rms)
 
     return rms_energy
 
+
 def calculate_spectral_flux(audio, frame_count, frame_rate):
-    y = audio['waveform']
-    sr = audio['sample_rate']
+    y = audio["waveform"]
+    sr = audio["sample_rate"]
     hop_length = int(sr / frame_rate)
     spectral_flux = []
     prev_spectrum = None
     for i in range(0, len(y), hop_length):
-        frame = y[i:i+hop_length]
+        frame = y[i : i + hop_length]
         spectrum = np.abs(np.fft.fft(frame))
         if prev_spectrum is not None:
             flux = np.sum((spectrum - prev_spectrum) ** 2)
@@ -346,6 +379,7 @@ def calculate_spectral_flux(audio, frame_count, frame_rate):
     spectral_flux = np.array(spectral_flux)
     spectral_flux = spectral_flux / np.max(spectral_flux)
     return spectral_flux[:frame_count]
+
 
 def calculate_zero_crossing_rate(audio, frame_count, frame_rate):
     """
@@ -359,8 +393,8 @@ def calculate_zero_crossing_rate(audio, frame_count, frame_rate):
     Returns:
     - zero_crossing_rates: List of ZCR values for each frame.
     """
-    waveform = audio['waveform']
-    sample_rate = audio['sample_rate']
+    waveform = audio["waveform"]
+    sample_rate = audio["sample_rate"]
 
     # Ensure waveform is a NumPy array for processing
     if isinstance(waveform, torch.Tensor):
@@ -387,3 +421,162 @@ def calculate_zero_crossing_rate(audio, frame_count, frame_rate):
         zero_crossing_rates.append(zcr)
 
     return zero_crossing_rates
+
+
+def perform_wavelet_transform(waveform, wavelet_type="db4", level=None):
+    """
+    Performs wavelet decomposition on audio signal.
+
+    Args:
+        waveform (Tensor): Input audio waveform
+        wavelet_type (str): Wavelet type (e.g., 'db4', 'haar', 'sym4')
+        level (int, optional): Decomposition level. If None, computed based on data length
+
+    Returns:
+        tuple: (coefficients, wavelets)
+    """
+    # Convert to numpy for wavelet processing
+    if isinstance(waveform, torch.Tensor):
+        waveform = waveform.cpu().numpy()
+
+    # Handle multi-channel audio
+    if waveform.ndim > 1:
+        waveform = np.mean(waveform, axis=0)
+
+    # Perform wavelet decomposition
+    coeffs = pywt.wavedec(waveform, wavelet_type, level=level)
+
+    # Convert coefficients back to torch tensors
+    coeffs = [torch.from_numpy(c).float() for c in coeffs]
+
+    return coeffs
+
+
+def inverse_wavelet_transform(coeffs, wavelet_type="db4"):
+    """
+    Reconstructs signal from wavelet coefficients.
+
+    Args:
+        coeffs (list): Wavelet coefficients
+        wavelet_type (str): Wavelet type used in decomposition
+
+    Returns:
+        Tensor: Reconstructed audio signal
+    """
+    # Convert coefficients to numpy
+    coeffs_np = [c.cpu().numpy() for c in coeffs]
+
+    # Perform reconstruction
+    reconstructed = pywt.waverec(coeffs_np, wavelet_type)
+
+    # Convert back to torch tensor
+    return torch.from_numpy(reconstructed).float()
+
+
+def perform_emd(waveform):
+    """
+    Performs a simplified version of Empirical Mode Decomposition on audio signal.
+    This is a basic implementation that doesn't require the emd package.
+    """
+    # Convert to numpy for processing
+    if isinstance(waveform, torch.Tensor):
+        waveform = waveform.cpu().numpy()
+
+    # Handle multi-channel audio
+    if waveform.ndim > 1:
+        waveform = np.mean(waveform, axis=0)
+
+    # Simple EMD implementation
+    imfs = []
+    residual = waveform.copy()
+
+    # Extract 3 IMFs (you can adjust this number)
+    for _ in range(3):
+        # Find local maxima and minima
+        maxima = (
+            np.where(
+                (residual[1:-1] > residual[:-2]) & (residual[1:-1] > residual[2:])
+            )[0]
+            + 1
+        )
+        minima = (
+            np.where(
+                (residual[1:-1] < residual[:-2]) & (residual[1:-1] < residual[2:])
+            )[0]
+            + 1
+        )
+
+        if len(maxima) < 2 or len(minima) < 2:
+            break
+
+        # Interpolate envelopes
+        t = np.arange(len(residual))
+        max_spline = np.interp(t, maxima, residual[maxima])
+        min_spline = np.interp(t, minima, residual[minima])
+
+        # Calculate mean envelope
+        mean_env = (max_spline + min_spline) / 2
+
+        # Extract IMF
+        imf = residual - mean_env
+        imfs.append(imf)
+
+        # Update residual
+        residual = mean_env
+
+    # Stack IMFs and convert to tensor
+    if imfs:
+        imfs_array = np.stack(imfs)
+        imfs_torch = torch.from_numpy(imfs_array).float()
+        return imfs_torch
+    else:
+        # If no IMFs were extracted, return the original signal as a single IMF
+        return torch.from_numpy(waveform[np.newaxis, :]).float()
+
+
+def calculate_band_energy(coeffs, sample_rate, frame_rate):
+    """Calculate energy envelope of wavelet coefficients over time."""
+    if isinstance(coeffs, torch.Tensor):
+        coeffs = coeffs.cpu().numpy()
+
+    # Calculate frame size
+    frame_size = int(sample_rate / frame_rate)
+
+    # Calculate energy over time
+    energy = np.array(
+        [
+            np.sum(coeffs[i : i + frame_size] ** 2)
+            for i in range(0, len(coeffs), frame_size)
+        ]
+    )
+
+    # Normalize
+    energy = energy / np.max(energy) if np.max(energy) > 0 else energy
+
+    return torch.from_numpy(energy).float()
+
+
+def calculate_imf_envelope(imf, sample_rate, frame_rate):
+    """Calculate amplitude envelope of IMF over time."""
+    if isinstance(imf, torch.Tensor):
+        imf = imf.cpu().numpy()
+
+    # Calculate frame size
+    frame_size = int(sample_rate / frame_rate)
+
+    # Calculate envelope using Hilbert transform
+    analytic_signal = hilbert(imf)
+    amplitude_envelope = np.abs(analytic_signal)
+
+    # Downsample to frame rate
+    envelope = np.array(
+        [
+            np.mean(amplitude_envelope[i : i + frame_size])
+            for i in range(0, len(amplitude_envelope), frame_size)
+        ]
+    )
+
+    # Normalize
+    envelope = envelope / np.max(envelope) if np.max(envelope) > 0 else envelope
+
+    return torch.from_numpy(envelope).float()

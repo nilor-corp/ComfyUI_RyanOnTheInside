@@ -1,10 +1,19 @@
 from .feature_extractors import FeatureExtractorBase
-from .features_audio import AudioFeature, PitchFeature, PitchRange, BaseFeature, RhythmFeature
+from .features_audio import (
+    AudioFeature,
+    PitchFeature,
+    PitchRange,
+    BaseFeature,
+    RhythmFeature,
+    WaveletFeature,
+    EMDFeature,
+)
 from ... import RyanOnTheInside
 from ..audio.audio_nodes import AudioNodeBase
 from ...tooltips import apply_tooltips
 
 _category = f"{FeatureExtractorBase.CATEGORY}/Audio"
+
 
 class AudioFeatureExtractorMixin:
     @classmethod
@@ -16,7 +25,7 @@ class AudioFeatureExtractorMixin:
             "required": {
                 **parent_inputs,
                 "audio": ("AUDIO",),
-            }
+            },
         }
 
     def calculate_target_frame_count(self, audio, frame_rate, frame_count):
@@ -25,6 +34,7 @@ class AudioFeatureExtractorMixin:
         sample_rate = audio["sample_rate"]
         natural_frame_count = int((waveform.shape[-1] / sample_rate) * frame_rate)
         return frame_count if frame_count > 0 else natural_frame_count
+
 
 @apply_tooltips
 class AudioFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
@@ -39,13 +49,23 @@ class AudioFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
             }
         }
 
-    RETURN_TYPES = ("FEATURE", "INT",)
-    RETURN_NAMES = ("feature", "frame_count",)
+    RETURN_TYPES = (
+        "FEATURE",
+        "INT",
+    )
+    RETURN_NAMES = (
+        "feature",
+        "frame_count",
+    )
     FUNCTION = "extract_feature"
     CATEGORY = _category
 
-    def extract_feature(self, audio, frame_rate, frame_count, width, height, extraction_method):
-        target_frame_count = self.calculate_target_frame_count(audio, frame_rate, frame_count)
+    def extract_feature(
+        self, audio, frame_rate, frame_count, width, height, extraction_method
+    ):
+        target_frame_count = self.calculate_target_frame_count(
+            audio, frame_rate, frame_count
+        )
 
         feature = AudioFeature(
             width=width,
@@ -54,10 +74,11 @@ class AudioFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
             audio=audio,
             frame_count=target_frame_count,
             frame_rate=frame_rate,
-            feature_type=extraction_method
+            feature_type=extraction_method,
         )
         feature.extract()
         return (feature, target_frame_count)
+
 
 @apply_tooltips
 class RhythmFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
@@ -69,7 +90,10 @@ class RhythmFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
             "required": {
                 **parent_inputs,
                 "audio": ("AUDIO",),
-                "time_signature": ("INT", {"default": 4, "min": 1, "max": 12, "step": 1}),
+                "time_signature": (
+                    "INT",
+                    {"default": 4, "min": 1, "max": 12, "step": 1},
+                ),
             },
         }
 
@@ -77,8 +101,19 @@ class RhythmFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
     FUNCTION = "extract_feature"
     CATEGORY = _category
 
-    def extract_feature(self, audio, extraction_method, time_signature, frame_rate, frame_count, width, height):
-        target_frame_count = self.calculate_target_frame_count(audio, frame_rate, frame_count)
+    def extract_feature(
+        self,
+        audio,
+        extraction_method,
+        time_signature,
+        frame_rate,
+        frame_count,
+        width,
+        height,
+    ):
+        target_frame_count = self.calculate_target_frame_count(
+            audio, frame_rate, frame_count
+        )
 
         feature = RhythmFeature(
             width=width,
@@ -88,10 +123,11 @@ class RhythmFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
             frame_count=target_frame_count,
             frame_rate=frame_rate,
             feature_type=extraction_method,
-            time_signature=time_signature
+            time_signature=time_signature,
         )
         feature.extract()
         return (feature,)
+
 
 @apply_tooltips
 class PitchFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
@@ -99,11 +135,14 @@ class PitchFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
     def INPUT_TYPES(cls):
         parent_inputs = super().INPUT_TYPES()["required"]
         parent_inputs["extraction_method"] = (PitchFeature.get_extraction_methods(),)
-        return {            
+        return {
             "required": {
                 **parent_inputs,
                 "audio": ("AUDIO",),
-                "opt_crepe_model":(["none", "medium", "tiny", "small", "large", "full"], {"default": "medium"})
+                "opt_crepe_model": (
+                    ["none", "medium", "tiny", "small", "large", "full"],
+                    {"default": "medium"},
+                ),
             },
             "optional": {
                 "opt_pitch_range_collections": ("PITCH_RANGE_COLLECTION",),
@@ -114,11 +153,23 @@ class PitchFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
     FUNCTION = "extract_feature"
     CATEGORY = _category
 
-    def extract_feature(self, audio, frame_rate, frame_count, width, height, extraction_method, opt_pitch_range_collections=None, opt_crepe_model=None):
+    def extract_feature(
+        self,
+        audio,
+        frame_rate,
+        frame_count,
+        width,
+        height,
+        extraction_method,
+        opt_pitch_range_collections=None,
+        opt_crepe_model=None,
+    ):
         if opt_pitch_range_collections is None:
             opt_pitch_range_collections = []
 
-        target_frame_count = self.calculate_target_frame_count(audio, frame_rate, frame_count)
+        target_frame_count = self.calculate_target_frame_count(
+            audio, frame_rate, frame_count
+        )
 
         feature = PitchFeature(
             width=width,
@@ -129,13 +180,15 @@ class PitchFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
             frame_rate=frame_rate,
             pitch_range_collections=opt_pitch_range_collections,
             feature_type=extraction_method,
-            crepe_model=opt_crepe_model
+            crepe_model=opt_crepe_model,
         )
         feature.extract()
         return (feature,)
 
+
 class PitchAbstraction(RyanOnTheInside):
-    CATEGORY="RyanOnTheInside/FlexFeatures/Audio/Pitch"
+    CATEGORY = "RyanOnTheInside/FlexFeatures/Audio/Pitch"
+
 
 @apply_tooltips
 class PitchRangeNode(PitchAbstraction):
@@ -143,8 +196,14 @@ class PitchRangeNode(PitchAbstraction):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "min_pitch": ("FLOAT", {"default": 80.0, "min": 20.0, "max": 2000.0, "step": 1.0}),
-                "max_pitch": ("FLOAT", {"default": 400.0, "min": 20.0, "max": 2000.0, "step": 1.0}),
+                "min_pitch": (
+                    "FLOAT",
+                    {"default": 80.0, "min": 20.0, "max": 2000.0, "step": 1.0},
+                ),
+                "max_pitch": (
+                    "FLOAT",
+                    {"default": 400.0, "min": 20.0, "max": 2000.0, "step": 1.0},
+                ),
             },
             "optional": {
                 "previous_range_collection": ("PITCH_RANGE_COLLECTION",),
@@ -166,7 +225,8 @@ class PitchRangeNode(PitchAbstraction):
         else:
             collections = previous_range_collection + [pitch_range_collection]
         return (collections,)
-    
+
+
 @apply_tooltips
 class PitchRangePresetNode(PitchAbstraction):
     @classmethod
@@ -196,13 +256,13 @@ class PitchRangePresetNode(PitchAbstraction):
 
     def create_pitch_range_preset(self, preset, previous_range_collection=None):
         presets = {
-            "Bass": (82.41, 196.00),            # E2 - G3
-            "Baritone": (98.00, 247.94),        # G2 - B3
-            "Tenor": (130.81, 349.23),          # C3 - F4
-            "Contralto": (130.81, 349.23),      # C3 - F4
-            "Alto": (174.61, 440.00),           # F3 - A4
+            "Bass": (82.41, 196.00),  # E2 - G3
+            "Baritone": (98.00, 247.94),  # G2 - B3
+            "Tenor": (130.81, 349.23),  # C3 - F4
+            "Contralto": (130.81, 349.23),  # C3 - F4
+            "Alto": (174.61, 440.00),  # F3 - A4
             "Mezzo-soprano": (196.00, 523.25),  # G3 - C5
-            "Soprano": (261.63, 1046.50),       # C4 - C6
+            "Soprano": (261.63, 1046.50),  # C4 - C6
         }
 
         min_pitch, max_pitch = presets.get(preset, (20.0, 2000.0))
@@ -216,7 +276,8 @@ class PitchRangePresetNode(PitchAbstraction):
         else:
             collections = previous_range_collection + [pitch_range_collection]
         return (collections,)
-    
+
+
 @apply_tooltips
 class PitchRangeByNoteNode(PitchAbstraction):
     @classmethod
@@ -224,7 +285,10 @@ class PitchRangeByNoteNode(PitchAbstraction):
         return {
             "required": {
                 "chord_only": ("BOOLEAN", {"default": False}),
-                "pitch_tolerance_percent": ("FLOAT", {"default": 100.0, "min": 0.0, "max": 100.0, "step": 0.1}),
+                "pitch_tolerance_percent": (
+                    "FLOAT",
+                    {"default": 100.0, "min": 0.0, "max": 100.0, "step": 0.1},
+                ),
                 "notes": ("STRING", {"multiline": False}),
             },
             "optional": {
@@ -236,12 +300,16 @@ class PitchRangeByNoteNode(PitchAbstraction):
     FUNCTION = "create_note_pitch_ranges"
     CATEGORY = _category
 
-    def create_note_pitch_ranges(self, chord_only, notes, pitch_tolerance_percent, previous_range_collection=None):
+    def create_note_pitch_ranges(
+        self, chord_only, notes, pitch_tolerance_percent, previous_range_collection=None
+    ):
         if not notes:
             raise ValueError("At least one note must be selected.")
 
         # Parse the 'notes' string into a list of MIDI note numbers
-        selected_notes = [int(note.strip()) for note in notes.split(',') if note.strip().isdigit()]
+        selected_notes = [
+            int(note.strip()) for note in notes.split(",") if note.strip().isdigit()
+        ]
 
         if not selected_notes:
             raise ValueError("No valid notes found in the 'notes' field.")
@@ -249,7 +317,9 @@ class PitchRangeByNoteNode(PitchAbstraction):
         pitch_ranges = []
         for midi_note in selected_notes:
             frequency = self._midi_to_frequency(midi_note)
-            tolerance = PitchFeature.calculate_tolerance(frequency, pitch_tolerance_percent)
+            tolerance = PitchFeature.calculate_tolerance(
+                frequency, pitch_tolerance_percent
+            )
             min_pitch = frequency - tolerance
             max_pitch = frequency + tolerance
             pitch_range = PitchRange(min_pitch, max_pitch)
@@ -271,5 +341,145 @@ class PitchRangeByNoteNode(PitchAbstraction):
 
     def _midi_to_frequency(self, midi_note):
         import librosa
+
         return librosa.midi_to_hz(midi_note)
+
     # The _calculate_tolerance method has been removed from here
+
+
+@apply_tooltips
+class WaveletFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+                "extraction_method": (
+                    [
+                        "wavelet_high_frequency",
+                        "wavelet_mid_frequency",
+                        "wavelet_low_frequency",
+                    ],
+                    {"default": "wavelet_high_frequency"},
+                ),
+                "frame_count": (
+                    "INT",
+                    {"default": 16, "min": 1, "max": 1024, "step": 1},
+                ),
+                "frame_rate": (
+                    "FLOAT",
+                    {"default": 30.0, "min": 0.01, "max": 1000.0, "step": 0.01},
+                ),
+                "width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 64}),
+                "height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 64}),
+            },
+        }
+
+    RETURN_TYPES = ("FEATURE",)
+    FUNCTION = "extract_feature"
+    CATEGORY = _category
+
+    def extract_feature(
+        self, audio, extraction_method, frame_count, frame_rate, width, height
+    ):
+        from .features_audio import WaveletFeature
+
+        # Validate extraction_method
+        valid_methods = [
+            "wavelet_high_frequency",
+            "wavelet_mid_frequency",
+            "wavelet_low_frequency",
+        ]
+        if extraction_method not in valid_methods:
+            print(
+                f"Warning: Invalid extraction_method '{extraction_method}'. Using default."
+            )
+            extraction_method = "wavelet_high_frequency"
+
+        # Validate frame_rate
+        if frame_rate < 0.01:
+            print(f"Warning: Invalid frame_rate {frame_rate}. Using default.")
+            frame_rate = 30.0
+
+        # Calculate target frame count
+        target_frame_count = self.calculate_target_frame_count(
+            audio, frame_rate, frame_count
+        )
+
+        feature_name = "wavelet_feature"
+        feature = WaveletFeature(
+            width=width,
+            height=height,
+            feature_name=feature_name,
+            audio=audio,
+            frame_count=target_frame_count,
+            frame_rate=frame_rate,
+            feature_type=extraction_method,
+        ).extract()
+
+        return (feature,)
+
+
+class EMDFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBase):
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+                "extraction_method": (
+                    ["emd_fast", "emd_medium", "emd_slow"],
+                    {"default": "emd_fast"},
+                ),
+                "frame_count": (
+                    "INT",
+                    {"default": 16, "min": 1, "max": 1024, "step": 1},
+                ),
+                "frame_rate": (
+                    "FLOAT",
+                    {"default": 30.0, "min": 0.01, "max": 1000.0, "step": 0.01},
+                ),
+                "width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 64}),
+                "height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 64}),
+                "num_imfs": ("INT", {"default": 3, "min": 1, "max": 10, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("FEATURE",)
+    FUNCTION = "extract_feature"
+    CATEGORY = _category
+
+    def extract_feature(
+        self, audio, extraction_method, frame_count, frame_rate, width, height, num_imfs
+    ):
+        from .features_audio import EMDFeature
+
+        # Validate extraction_method
+        valid_methods = ["emd_fast", "emd_medium", "emd_slow"]
+        if extraction_method not in valid_methods:
+            print(
+                f"Warning: Invalid extraction_method '{extraction_method}'. Using default."
+            )
+            extraction_method = "emd_fast"
+
+        # Validate frame_rate
+        if frame_rate < 0.01:
+            print(f"Warning: Invalid frame_rate {frame_rate}. Using default.")
+            frame_rate = 30.0
+
+        # Calculate target frame count
+        target_frame_count = self.calculate_target_frame_count(
+            audio, frame_rate, frame_count
+        )
+
+        feature_name = "emd_feature"
+        feature = EMDFeature(
+            width=width,
+            height=height,
+            feature_name=feature_name,
+            audio=audio,
+            frame_count=target_frame_count,
+            frame_rate=frame_rate,
+            feature_type=extraction_method,
+        ).extract()
+
+        return (feature,)

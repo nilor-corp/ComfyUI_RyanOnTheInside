@@ -9,3 +9,5 @@ mido
 torchaudio
 pygame
 scikit-image
+PyWavelets
+emd-signal

@@ -8,16 +8,24 @@ from .audio_utils import (
     concatenate_audio,
     combine_audio,
     dither_audio,
+    perform_wavelet_transform,
+    inverse_wavelet_transform,
+    perform_emd,
+    calculate_band_energy,
+    calculate_imf_envelope,
+    HAS_EMD,
 )
 import torch
 from ...tooltips import apply_tooltips
 import librosa
+
 
 class AudioUtility(AudioNodeBase):
     def __init__(self):
         super().__init__()
 
     CATEGORY = "RyanOnTheInside/Audio/Utility"
+
 
 @apply_tooltips
 class AudioPad(AudioUtility):
@@ -36,9 +44,10 @@ class AudioPad(AudioUtility):
     FUNCTION = "pad_audio_node"
 
     def pad_audio_node(self, audio, pad_left, pad_right, pad_mode):
-        waveform, sample_rate = audio['waveform'], audio['sample_rate']
+        waveform, sample_rate = audio["waveform"], audio["sample_rate"]
         padded_waveform = pad_audio(waveform, pad_left, pad_right, pad_mode)
         return ({"waveform": padded_waveform, "sample_rate": sample_rate},)
+
 
 @apply_tooltips
 class AudioVolumeNormalization(AudioUtility):
@@ -47,7 +56,10 @@ class AudioVolumeNormalization(AudioUtility):
         return {
             "required": {
                 "audio": ("AUDIO",),
-                "target_level": ("FLOAT", {"default": -10.0, "min": -60.0, "max": 0.0, "step": 0.1}),
+                "target_level": (
+                    "FLOAT",
+                    {"default": -10.0, "min": -60.0, "max": 0.0, "step": 0.1},
+                ),
             }
         }
 
@@ -55,9 +67,10 @@ class AudioVolumeNormalization(AudioUtility):
     FUNCTION = "normalize_volume_node"
 
     def normalize_volume_node(self, audio, target_level):
-        waveform, sample_rate = audio['waveform'], audio['sample_rate']
+        waveform, sample_rate = audio["waveform"], audio["sample_rate"]
         normalized_waveform = normalize_volume(waveform, target_level)
         return ({"waveform": normalized_waveform, "sample_rate": sample_rate},)
+
 
 @apply_tooltips
 class AudioResample(AudioUtility):
@@ -66,7 +79,10 @@ class AudioResample(AudioUtility):
         return {
             "required": {
                 "audio": ("AUDIO",),
-                "new_sample_rate": ("INT", {"default": 44100, "min": 8000, "max": 192000, "step": 100}),
+                "new_sample_rate": (
+                    "INT",
+                    {"default": 44100, "min": 8000, "max": 192000, "step": 100},
+                ),
             }
         }
 
@@ -74,9 +90,10 @@ class AudioResample(AudioUtility):
     FUNCTION = "resample_audio_node"
 
     def resample_audio_node(self, audio, new_sample_rate):
-        waveform, sample_rate = audio['waveform'], audio['sample_rate']
+        waveform, sample_rate = audio["waveform"], audio["sample_rate"]
         resampled_waveform = resample_audio(waveform, sample_rate, new_sample_rate)
         return ({"waveform": resampled_waveform, "sample_rate": new_sample_rate},)
+
 
 @apply_tooltips
 class AudioChannelMerge(AudioUtility):
@@ -92,16 +109,17 @@ class AudioChannelMerge(AudioUtility):
     FUNCTION = "merge_channels_node"
 
     def merge_channels_node(self, audio_list):
-        waveform_list = [audio['waveform'] for audio in audio_list]
-        sample_rate = audio_list[0]['sample_rate']
+        waveform_list = [audio["waveform"] for audio in audio_list]
+        sample_rate = audio_list[0]["sample_rate"]
 
         # Check that all sample rates are the same
         for audio in audio_list:
-            if audio['sample_rate'] != sample_rate:
+            if audio["sample_rate"] != sample_rate:
                 raise ValueError("Sample rates must match for channel merging")
 
         merged_waveform = merge_channels(waveform_list)
         return ({"waveform": merged_waveform, "sample_rate": sample_rate},)
+
 
 @apply_tooltips
 class AudioChannelSplit(AudioUtility):
@@ -117,10 +135,13 @@ class AudioChannelSplit(AudioUtility):
     FUNCTION = "split_channels_node"
 
     def split_channels_node(self, audio):
-        waveform, sample_rate = audio['waveform'], audio['sample_rate']
+        waveform, sample_rate = audio["waveform"], audio["sample_rate"]
         channel_waveforms = split_channels(waveform)
-        audio_list = [{"waveform": w, "sample_rate": sample_rate} for w in channel_waveforms]
+        audio_list = [
+            {"waveform": w, "sample_rate": sample_rate} for w in channel_waveforms
+        ]
         return (audio_list,)
+
 
 @apply_tooltips
 class Audio_Concatenate(AudioUtility):
@@ -137,12 +158,15 @@ class Audio_Concatenate(AudioUtility):
     FUNCTION = "concatenate_audio_node"
 
     def concatenate_audio_node(self, audio1, audio2):
-        if audio1['sample_rate'] != audio2['sample_rate']:
+        if audio1["sample_rate"] != audio2["sample_rate"]:
             raise ValueError("Both audio inputs must have the same sample rate")
 
-        sample_rate = audio1['sample_rate']
-        concatenated_waveform = concatenate_audio(audio1['waveform'], audio2['waveform'])
+        sample_rate = audio1["sample_rate"]
+        concatenated_waveform = concatenate_audio(
+            audio1["waveform"], audio2["waveform"]
+        )
         return ({"waveform": concatenated_waveform, "sample_rate": sample_rate},)
+
 
 @apply_tooltips
 class Audio_Combine(AudioUtility):
@@ -152,8 +176,14 @@ class Audio_Combine(AudioUtility):
             "required": {
                 "audio1": ("AUDIO",),
                 "audio2": ("AUDIO",),
-                "weight1": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "weight2": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "weight1": (
+                    "FLOAT",
+                    {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
+                "weight2": (
+                    "FLOAT",
+                    {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
             }
         }
 
@@ -161,12 +191,15 @@ class Audio_Combine(AudioUtility):
     FUNCTION = "combine_audio_node"
 
     def combine_audio_node(self, audio1, audio2, weight1=0.5, weight2=0.5):
-        if audio1['sample_rate'] != audio2['sample_rate']:
+        if audio1["sample_rate"] != audio2["sample_rate"]:
             raise ValueError("Both audio inputs must have the same sample rate")
 
-        sample_rate = audio1['sample_rate']
-        combined_waveform = combine_audio(audio1['waveform'], audio2['waveform'], weight1, weight2)
+        sample_rate = audio1["sample_rate"]
+        combined_waveform = combine_audio(
+            audio1["waveform"], audio2["waveform"], weight1, weight2
+        )
         return ({"waveform": combined_waveform, "sample_rate": sample_rate},)
+
 
 @apply_tooltips
 class AudioSubtract(AudioUtility):
@@ -183,23 +216,28 @@ class AudioSubtract(AudioUtility):
     FUNCTION = "subtract_audio_node"
 
     def subtract_audio_node(self, audio1, audio2):
-        if audio1['sample_rate'] != audio2['sample_rate']:
+        if audio1["sample_rate"] != audio2["sample_rate"]:
             raise ValueError("Both audio inputs must have the same sample rate")
 
-        sample_rate = audio1['sample_rate']
-        waveform1 = audio1['waveform']
-        waveform2 = audio2['waveform']
+        sample_rate = audio1["sample_rate"]
+        waveform1 = audio1["waveform"]
+        waveform2 = audio2["waveform"]
 
         # Ensure both waveforms have the same length
         if waveform1.shape[1] != waveform2.shape[1]:
             max_length = max(waveform1.shape[1], waveform2.shape[1])
-            waveform1 = torch.nn.functional.pad(waveform1, (0, max_length - waveform1.shape[1]))
-            waveform2 = torch.nn.functional.pad(waveform2, (0, max_length - waveform2.shape[1]))
+            waveform1 = torch.nn.functional.pad(
+                waveform1, (0, max_length - waveform1.shape[1])
+            )
+            waveform2 = torch.nn.functional.pad(
+                waveform2, (0, max_length - waveform2.shape[1])
+            )
 
         subtracted_waveform = waveform1 - waveform2
         return ({"waveform": subtracted_waveform, "sample_rate": sample_rate},)
 
-#TODO: TOO SLOW
+
+# TODO: TOO SLOW
 @apply_tooltips
 class AudioInfo(AudioUtility):
     @classmethod
@@ -207,51 +245,81 @@ class AudioInfo(AudioUtility):
         return {
             "required": {
                 "audio": ("AUDIO",),
-                "frame_rate": ("FLOAT", {"default": 30, "min": 0.1, "max": 120, "step": 0.1}),
+                "frame_rate": (
+                    "FLOAT",
+                    {"default": 30, "min": 0.1, "max": 120, "step": 0.1},
+                ),
             }
         }
 
-    RETURN_TYPES = ("INT", "INT", "INT", "INT", "INT", "FLOAT", "FLOAT", "FLOAT", "INT", "INT", "INT", "FLOAT", "FLOAT", "FLOAT", "STRING")
+    RETURN_TYPES = (
+        "INT",
+        "INT",
+        "INT",
+        "INT",
+        "INT",
+        "FLOAT",
+        "FLOAT",
+        "FLOAT",
+        "INT",
+        "INT",
+        "INT",
+        "FLOAT",
+        "FLOAT",
+        "FLOAT",
+        "STRING",
+    )
     RETURN_NAMES = (
-        "total_frames", "frames_per_beat", "frames_per_bar", "frames_per_quarter", "frames_per_eighth",
-        "audio_duration", "beats_per_second", "detected_bpm",
-        "sample_rate", "num_channels", "num_samples",
-        "max_amplitude", "mean_amplitude", "rms_amplitude", "bit_depth"
+        "total_frames",
+        "frames_per_beat",
+        "frames_per_bar",
+        "frames_per_quarter",
+        "frames_per_eighth",
+        "audio_duration",
+        "beats_per_second",
+        "detected_bpm",
+        "sample_rate",
+        "num_channels",
+        "num_samples",
+        "max_amplitude",
+        "mean_amplitude",
+        "rms_amplitude",
+        "bit_depth",
     )
     FUNCTION = "get_audio_info"
 
     def get_audio_info(self, audio, frame_rate):
         # Get basic audio info
-        waveform = audio['waveform']
-        sample_rate = audio['sample_rate']
-        
+        waveform = audio["waveform"]
+        sample_rate = audio["sample_rate"]
+
         # Calculate original audio info first
         num_channels = waveform.shape[1] if waveform.dim() > 2 else 1
         num_samples = waveform.shape[-1]
         audio_duration = num_samples / sample_rate
-        
+
         # Calculate total frames
         total_frames = int(audio_duration * frame_rate)
-        
+
         # Detect BPM using librosa
         audio_mono = waveform.squeeze(0).mean(axis=0).cpu().numpy()
         tempo, _ = librosa.beat.beat_track(y=audio_mono, sr=sample_rate)
         beats_per_second = tempo / 60.0
-        
+
         # Calculate frames per beat and musical divisions
         frames_per_beat = int(frame_rate / beats_per_second)
         frames_per_bar = frames_per_beat * 4  # Assuming 4/4 time signature
         frames_per_quarter = frames_per_beat
         frames_per_eighth = frames_per_beat // 2
-        
+
         # Calculate amplitude statistics
         max_amplitude = float(torch.max(torch.abs(waveform)))
         mean_amplitude = float(torch.mean(torch.abs(waveform)))
-        rms_amplitude = float(torch.sqrt(torch.mean(waveform ** 2)))
-        
+        rms_amplitude = float(torch.sqrt(torch.mean(waveform**2)))
+
         # Get bit depth from dtype
         bit_depth = str(waveform.dtype)
-        
+
         return (
             total_frames,
             frames_per_beat,
@@ -267,8 +335,9 @@ class AudioInfo(AudioUtility):
             max_amplitude,
             mean_amplitude,
             rms_amplitude,
-            bit_depth
+            bit_depth,
         )
+
 
 @apply_tooltips
 class AudioDither(AudioUtility):
@@ -286,6 +355,170 @@ class AudioDither(AudioUtility):
     FUNCTION = "dither_audio_node"
 
     def dither_audio_node(self, audio, bit_depth, noise_shaping):
-        waveform, sample_rate = audio['waveform'], audio['sample_rate']
+        waveform, sample_rate = audio["waveform"], audio["sample_rate"]
         quantized_waveform = dither_audio(waveform, bit_depth, noise_shaping)
         return ({"waveform": quantized_waveform, "sample_rate": sample_rate},)
+
+
+@apply_tooltips
+class AudioWaveletTransform(AudioUtility):
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+                "wavelet_type": (["db4", "haar", "sym4", "coif4", "bior4.4"],),
+                "decomposition_level": (
+                    "INT",
+                    {"default": 4, "min": 1, "max": 10, "step": 1},
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("LIST[TENSOR]", "STRING")
+    RETURN_NAMES = ("wavelet_coefficients", "wavelet_type")
+    FUNCTION = "wavelet_transform"
+
+    def wavelet_transform(self, audio, wavelet_type, decomposition_level):
+        waveform = audio["waveform"]
+        coeffs = perform_wavelet_transform(waveform, wavelet_type, decomposition_level)
+        return (coeffs, wavelet_type)
+
+
+@apply_tooltips
+class AudioWaveletReconstruct(AudioUtility):
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "wavelet_coefficients": ("LIST[TENSOR]",),
+                "wavelet_type": ("STRING",),
+                "original_audio": ("AUDIO",),  # For sample rate reference
+            }
+        }
+
+    RETURN_TYPES = ("AUDIO",)
+    FUNCTION = "wavelet_reconstruct"
+
+    def wavelet_reconstruct(self, wavelet_coefficients, wavelet_type, original_audio):
+        reconstructed = inverse_wavelet_transform(wavelet_coefficients, wavelet_type)
+        return (
+            {
+                "waveform": reconstructed.unsqueeze(0),
+                "sample_rate": original_audio["sample_rate"],
+            },
+        )
+
+
+@apply_tooltips
+class AudioEMD(AudioUtility):
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+            }
+        }
+
+    RETURN_TYPES = ("LIST[TENSOR]",)
+    RETURN_NAMES = ("intrinsic_mode_functions",)
+    FUNCTION = "decompose_emd"
+
+    def decompose_emd(self, audio):
+        waveform = audio["waveform"]
+        imfs = perform_emd(waveform)
+        if imfs is None:
+            raise RuntimeError("EMD decomposition failed")
+        return (imfs,)
+
+
+@apply_tooltips
+class AudioWaveletAnalysis(AudioUtility):
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+                "wavelet_type": (["db4", "haar", "sym4", "coif4", "bior4.4"],),
+                "decomposition_level": (
+                    "INT",
+                    {"default": 4, "min": 1, "max": 10, "step": 1},
+                ),
+                "frame_rate": (
+                    "FLOAT",
+                    {"default": 30, "min": 0.1, "max": 120, "step": 0.1},
+                ),
+            }
+        }
+
+    RETURN_TYPES = (
+        "FLOAT",
+        "FLOAT",
+        "FLOAT",
+    )  # Multiple features from wavelet analysis
+    RETURN_NAMES = (
+        "high_frequency_energy",
+        "mid_frequency_energy",
+        "low_frequency_energy",
+    )
+    FUNCTION = "analyze_wavelet"
+
+    def analyze_wavelet(self, audio, wavelet_type, decomposition_level, frame_rate):
+        waveform = audio["waveform"]
+        sample_rate = audio["sample_rate"]
+
+        # Get wavelet coefficients
+        coeffs = perform_wavelet_transform(waveform, wavelet_type, decomposition_level)
+
+        # Calculate energy in different frequency bands over time
+        high_freq = calculate_band_energy(
+            coeffs[0], sample_rate, frame_rate
+        )  # Highest frequency band
+        mid_freq = calculate_band_energy(
+            coeffs[1], sample_rate, frame_rate
+        )  # Mid frequency band
+        low_freq = calculate_band_energy(
+            coeffs[2], sample_rate, frame_rate
+        )  # Low frequency band
+
+        return (high_freq, mid_freq, low_freq)
+
+
+@apply_tooltips
+class AudioEMDAnalysis(AudioUtility):
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "audio": ("AUDIO",),
+                "frame_rate": (
+                    "FLOAT",
+                    {"default": 30, "min": 0.1, "max": 120, "step": 0.1},
+                ),
+                "num_imfs": ("INT", {"default": 3, "min": 1, "max": 10, "step": 1}),
+            }
+        }
+
+    RETURN_TYPES = ("FLOAT", "FLOAT", "FLOAT")  # Features from different IMFs
+    RETURN_NAMES = ("fast_oscillations", "medium_oscillations", "slow_oscillations")
+    FUNCTION = "analyze_emd"
+
+    def analyze_emd(self, audio, frame_rate, num_imfs):
+        waveform = audio["waveform"]
+        sample_rate = audio["sample_rate"]
+
+        # Perform EMD
+        imfs = perform_emd(waveform)
+
+        # Extract features from different IMFs
+        fast = calculate_imf_envelope(
+            imfs[0], sample_rate, frame_rate
+        )  # Fastest oscillations
+        medium = calculate_imf_envelope(
+            imfs[1], sample_rate, frame_rate
+        )  # Medium oscillations
+        slow = calculate_imf_envelope(
+            imfs[2], sample_rate, frame_rate
+        )  # Slow oscillations
+
+        return (fast, medium, slow)
