@@ -569,16 +569,16 @@ class NoteEventsFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBas
         return {
             "required": {
                 "audio": ("AUDIO",),
-                "extraction_method": (
-                    [
-                        "note_onsets",
-                        "note_pitches",
-                        "note_durations",
-                        "note_density",
-                        "note_activity",
-                    ],
-                    {"default": "note_activity"},
-                ),
+                # "extraction_method": (
+                #     [
+                #         "note_onsets",
+                #         "note_pitches",
+                #         "note_durations",
+                #         "note_density",
+                #         "note_activity",
+                #     ],
+                #     {"default": "note_activity"},
+                # ),
                 "frame_count": (
                     "INT",
                     {"default": 16, "min": 1, "max": 1024, "step": 1},
@@ -615,15 +615,22 @@ class NoteEventsFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBas
             },
         }
 
-    RETURN_TYPES = ("FEATURE", "STRING")
-    RETURN_NAMES = ("feature", "notes_json")
+    RETURN_TYPES = ("FEATURE", "FEATURE", "FEATURE", "FEATURE", "FEATURE", "STRING")
+    RETURN_NAMES = (
+        "note_onsets_feature",
+        "note_pitches_feature",
+        "note_durations_feature",
+        "note_density_feature",
+        "note_activity_feature",
+        "notes_json",
+    )
     FUNCTION = "extract_feature"
     CATEGORY = _category
 
     def extract_feature(
         self,
         audio,
-        extraction_method,
+        # extraction_method,
         frame_count,
         frame_rate,
         width,
@@ -635,23 +642,32 @@ class NoteEventsFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBas
         polyphony_enabled=True,
         opt_crepe_model="medium",
     ):
-        from .features_audio import NoteEventsFeature
+        from .features_audio import NoteEventsFeature, BaseAudioFeature
         import json
         import numpy as np
 
-        # Validate extraction_method
-        valid_methods = [
-            "note_onsets",
-            "note_pitches",
-            "note_durations",
-            "note_density",
-            "note_activity",
-        ]
-        if extraction_method not in valid_methods:
-            print(
-                f"Warning: Invalid extraction_method '{extraction_method}'. Using default."
-            )
-            extraction_method = "note_activity"
+        # Create a concrete feature class that extends BaseAudioFeature
+        class NoteEventsAudioFeature(BaseAudioFeature):
+            @classmethod
+            def get_extraction_methods(cls):
+                return ["feature"]
+
+            def extract(self):
+                # Features are already set, no extraction needed
+                return self
+
+            def get_feature_sequence(self, feature_name=None):
+                # Use our single feature type when feature_name is None
+                if feature_name is None:
+                    feature_name = self.feature_name
+                return self.features.get(feature_name, [])
+
+            def get_value_at_frame(self, frame_index):
+                # Override to use our feature_name directly
+                feature_type = self.feature_name
+                if feature_type in self.features:
+                    return self.features[feature_type][frame_index]
+                return 0.0
 
         # Validate frame_rate
         if frame_rate < 0.01:
@@ -663,15 +679,15 @@ class NoteEventsFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBas
             audio, frame_rate, frame_count
         )
 
-        feature_name = "note_events_feature"
+        # Create a single feature object that will extract all features at once
         feature = NoteEventsFeature(
             width=width,
             height=height,
-            feature_name=feature_name,
+            feature_name="note_events",
             audio=audio,
             frame_count=target_frame_count,
             frame_rate=frame_rate,
-            feature_type=extraction_method,
+            feature_type="note_activity",  # Default type
             min_note_duration=min_note_duration,
             onset_threshold=onset_threshold,
             pitch_min=pitch_min,
@@ -704,4 +720,49 @@ class NoteEventsFeatureExtractor(AudioFeatureExtractorMixin, FeatureExtractorBas
         # Now serialize to JSON
         notes_json = json.dumps(notes_json_safe, indent=2)
 
-        return (feature, notes_json)
+        # Create 5 separate feature objects - one for each feature type
+        # Each one will contain only its specific feature data
+
+        # 1. Note Onsets Feature
+        onsets = NoteEventsAudioFeature(
+            "note_onsets", audio, target_frame_count, frame_rate, width, height
+        )
+        onsets.features = {"note_onsets": feature.features["note_onsets"]}
+        onsets.feature_name = "note_onsets"  # Ensure feature_name matches the key
+
+        # 2. Note Pitches Feature
+        pitches = NoteEventsAudioFeature(
+            "note_pitches", audio, target_frame_count, frame_rate, width, height
+        )
+        pitches.features = {"note_pitches": feature.features["note_pitches"]}
+        pitches.feature_name = "note_pitches"  # Ensure feature_name matches the key
+
+        # 3. Note Durations Feature
+        durations = NoteEventsAudioFeature(
+            "note_durations", audio, target_frame_count, frame_rate, width, height
+        )
+        durations.features = {"note_durations": feature.features["note_durations"]}
+        durations.feature_name = "note_durations"  # Ensure feature_name matches the key
+
+        # 4. Note Density Feature
+        density = NoteEventsAudioFeature(
+            "note_density", audio, target_frame_count, frame_rate, width, height
+        )
+        density.features = {"note_density": feature.features["note_density"]}
+        density.feature_name = "note_density"  # Ensure feature_name matches the key
+
+        # 5. Note Activity Feature
+        activity = NoteEventsAudioFeature(
+            "note_activity", audio, target_frame_count, frame_rate, width, height
+        )
+        activity.features = {"note_activity": feature.features["note_activity"]}
+        activity.feature_name = "note_activity"  # Ensure feature_name matches the key
+
+        return (
+            onsets,
+            pitches,
+            durations,
+            density,
+            activity,
+            notes_json,
+        )

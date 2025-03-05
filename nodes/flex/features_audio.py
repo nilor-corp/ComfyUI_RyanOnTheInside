@@ -1293,6 +1293,7 @@ class NoteEventsFeature(BaseAudioFeature):
         crepe_model="medium",  # CREPE model for accurate pitch detection
     ):
         super().__init__(feature_name, audio, frame_count, frame_rate, width, height)
+        self.features = {}
         self.feature_type = feature_type
         self.min_note_duration = min_note_duration
         self.onset_threshold = onset_threshold
@@ -1599,7 +1600,7 @@ class NoteEventsFeature(BaseAudioFeature):
             )
             note_density[i] = min(1.0, active_count / 4.0)  # Normalize, cap at 4 notes
 
-        # Store features
+        # Store ALL features regardless of the feature_type
         self.features = {
             "note_onsets": note_onsets.tolist(),
             "note_pitches": note_pitches.tolist(),
@@ -1608,7 +1609,7 @@ class NoteEventsFeature(BaseAudioFeature):
             "note_activity": note_activity.tolist(),
         }
 
-        # Set active feature based on feature_type
+        # Set the feature name requested as the default feature
         self.features[self.feature_name] = self.features[self.feature_type]
 
     def _normalize_features(self):
